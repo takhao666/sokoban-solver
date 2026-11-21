@@ -29,7 +29,9 @@ state spaces; solving room by room meets only their *sum*.
    is admissible and consistent, so the first solved state popped is
    push-optimal for that room.
 3. **Deadlock pruning.** Dead squares (reverse pull-reachability from the
-   goals — a box there can never be goaled) and frozen 2×2 blocks. Neither
+   goals — a box there can never be goaled), frozen 2×2 blocks, and frozen
+   boxes (a box blocked in both axes by walls or frozen neighbours, off its
+   goal — it can never move again, computed to a fixpoint). None of these
    prunes a solvable state, so optimality stands.
 4. **Stitching.** Rooms are solved in turn with the other rooms' boxes as
    walls (solved rooms' boxes sit on their goals). The player walks on from

@@ -14,7 +14,9 @@
 // moves one box one square, so the assignment cost can drop by at most 1 per
 // push: the heuristic is admissible and consistent, so the first solved state
 // A* pops is push-optimal for that room. Deadlock pruning: dead squares
-// (reverse pull-reachability from the goals) and frozen 2x2 blocks.
+// (reverse pull-reachability from the goals), frozen 2x2 blocks, and frozen
+// boxes (a box blocked in both axes by walls or frozen neighbours, off its
+// goal — it can never move again).
 //
 // Deterministic by construction: fixed iteration orders, a work budget counted
 // in expanded states (never the wall clock), no randomness, no environment
@@ -161,6 +163,33 @@ function frozenBlock(level: Level, occupied: Uint8Array, goal: Uint8Array, t: nu
   return false;
 }
 
+/**
+ * Whether any box is frozen off its goal: a box is frozen when it is blocked
+ * in both axes by walls or by boxes that are themselves frozen (computed to a
+ * fixpoint). A frozen box can never move again, so a frozen box off its goal
+ * makes the state dead. A frozen box on a goal is fine — it stays goaled.
+ * Sound: a non-frozen neighbour might still move away, so only walls and
+ * already-frozen boxes count as blocking.
+ */
+function frozenOffGoal(level: Level, occupied: Uint8Array, goal: Uint8Array, boxes: number[]): boolean {
+  const { w, wall } = level;
+  const frozen = new Set<number>();
+  const blocked = (q: number): boolean => wall[q] === 1 || (occupied[q] === 1 && frozen.has(q));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const b of boxes) {
+      if (frozen.has(b)) continue;
+      if (blocked(b - 1) && blocked(b + 1) && blocked(b - w) && blocked(b + w)) {
+        frozen.add(b);
+        changed = true;
+      }
+    }
+  }
+  for (const b of frozen) if (!goal[b]) return true;
+  return false;
+}
+
 /** Shortest walk from `from` to `to` around walls and boxes; lower-case LURD. */
 function walkTo(level: Level, occupied: Uint8Array, from: number, to: number): string {
   const { w, wall } = level;
@@ -271,6 +300,9 @@ function pushSearch(
   };
 
   const occupied = new Uint8Array(size);
+  for (const b of level.boxes) occupied[b] = 1;
+  if (frozenOffGoal(level, occupied, goal, level.boxes)) return null;
+  for (const b of level.boxes) occupied[b] = 0;
   const seen = new Int32Array(size);
   const mark = new Int32Array(size);
   const stack = new Int32Array(size);
@@ -396,8 +428,13 @@ function pushSearch(
           next = boxes.slice();
           next[bi] = t;
           next.sort((x, y) => x - y);
-          low = reachLow(level, occupied, b, mark, ++stamp, stack);
-          key = keyOf(next, low);
+          // Freeze deadlock: a box that can never move again, off its goal.
+          if (!frozenOffGoal(level, occupied, goal, next)) {
+            low = reachLow(level, occupied, b, mark, ++stamp, stack);
+            key = keyOf(next, low);
+          } else {
+            next = null;
+          }
         }
         occupied[t] = 0;
         occupied[b] = 1;
